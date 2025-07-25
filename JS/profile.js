@@ -7,7 +7,7 @@ let isAddingCertificate = false;
 let isAddingAcademic = false;
 
 // API endpoints
-const API_BASE = '/api';
+const API_BASE = 'http://localhost:2000';
 
 // Initialize the profile page
 document.addEventListener('DOMContentLoaded', function() {
@@ -129,7 +129,7 @@ async function loadUserProfile() {
         if (currentUser.type === 'student') {
             try {
                 let certs = [];
-                let certResUrl = `${API_BASE}/certificates?studentId=${currentUser.id}`;
+                let certResUrl = '/api/certificates?studentId=' + currentUser.id;
                 if (debugDiv) debugDiv.textContent += '\n[DEBUG] Fetching certificates from: ' + certResUrl;
                 let certRes = await fetch(certResUrl);
                 if (certRes.ok) {
@@ -141,7 +141,7 @@ async function loadUserProfile() {
                     console.error('[DEBUG] Certificates fetch failed:', certRes.status, certRes.statusText);
                 }
                 if (!certs || certs.length === 0) {
-                    const dbRes = await fetch(`${API_BASE}/db.json`);
+                    const dbRes = await fetch('/api/db.json');
                     if (dbRes.ok) {
                         const dbData = await dbRes.json();
                         certs = (dbData.certificates || []).filter(cert => cert.studentId === currentUser.id);
