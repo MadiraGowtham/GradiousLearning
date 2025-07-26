@@ -6,8 +6,10 @@ let isEditingAcademic = false;
 let isAddingCertificate = false;
 let isAddingAcademic = false;
 
-// API endpoints
-const API_BASE = 'http://localhost:2000';
+// API endpoints - dynamic based on environment
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? 'http://localhost:2000' 
+    : '/api';
 
 // Initialize the profile page
 document.addEventListener('DOMContentLoaded', function() {
