@@ -92,22 +92,24 @@ async function loadUserProfile() {
         const debugDiv = document.getElementById('cert-debug');
         console.log('[DEBUG] currentUser:', currentUser);
         if (debugDiv) debugDiv.textContent = '[DEBUG] currentUser.id: ' + currentUser.id;
-        // Load profile from server's /profiles endpoint
+        // Load profile from server's db.json endpoint
         try {
-            const response = await fetch(`${API_BASE}/profiles?userId=${currentUser.id}`);
-            console.log('[DEBUG] Fetching profile from', `${API_BASE}/profiles?userId=${currentUser.id}`);
+            const response = await fetch(`${API_BASE}/db.json`);
+            console.log('[DEBUG] Fetching profile from', `${API_BASE}/db.json`);
             if (response.ok) {
-                const userProfiles = await response.json();
+                const data = await response.json();
+                const profiles = data.profiles || [];
+                const userProfiles = profiles.filter(p => p.userId === currentUser.id);
                 console.log('[DEBUG] Profiles found:', userProfiles);
                 if (userProfiles.length > 0) {
                     userProfile = userProfiles[userProfiles.length - 1];
-                    console.log('[DEBUG] Loaded profile from /profiles:', userProfile);
+                    console.log('[DEBUG] Loaded profile from db.json:', userProfile);
                     const profileKey = `${currentUser.type}Profile`;
                     localStorage.setItem(profileKey, JSON.stringify(userProfile));
                 }
             }
         } catch (error) {
-            console.error('[DEBUG] Error loading profile from /profiles:', error);
+            console.error('[DEBUG] Error loading profile from db.json:', error);
         }
         const profileKey = `${currentUser.type}Profile`;
         let profile = JSON.parse(localStorage.getItem(profileKey));
@@ -141,7 +143,16 @@ async function loadUserProfile() {
                     console.error('[DEBUG] Certificates fetch failed:', certRes.status, certRes.statusText);
                 }
                 if (!certs || certs.length === 0) {
-                    // fallback: do nothing or handle as needed
+                    const dbRes = await fetch('/api/db.json');
+                    if (dbRes.ok) {
+                        const dbData = await dbRes.json();
+                        certs = (dbData.certificates || []).filter(cert => cert.studentId === currentUser.id);
+                        if (debugDiv) debugDiv.textContent += '\n[DEBUG] Fallback certificates from db.json: ' + JSON.stringify(certs);
+                        console.log('[DEBUG] Fallback certificates from db.json:', certs);
+                    } else {
+                        if (debugDiv) debugDiv.textContent += '\n[DEBUG] db.json fetch failed: ' + dbRes.status + ' ' + dbRes.statusText;
+                        console.error('[DEBUG] db.json fetch failed:', dbRes.status, dbRes.statusText);
+                    }
                 }
                 // Assign certificates after merging profile
                 userProfile.certificates = certs.map(cert => ({
@@ -898,43 +909,50 @@ async function saveProfileToDatabase(profileData) {
             ...profileData,
             lastUpdated: timestamp
         };
-        // Check if profile exists
-        const getRes = await fetch(`${API_BASE}/profiles?userId=${currentUser.id}`);
-        if (getRes.ok) {
-            const userProfiles = await getRes.json();
-            if (userProfiles.length > 0) {
-                // Update existing profile (use PATCH for partial update or PUT for full)
-                const profileId = userProfiles[userProfiles.length - 1].id;
-                const updateRes = await fetch(`${API_BASE}/profiles/${profileId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(profilePayload)
-                });
-                if (updateRes.ok) {
-                    console.log('Profile updated in database successfully');
-                    return true;
-                } else {
-                    console.error('Failed to update profile:', updateRes.status, updateRes.statusText);
-                    throw new Error('Failed to update profile in database');
-                }
+        
+        // Load current db.json
+        const response = await fetch(`${API_BASE}/db.json`);
+        if (response.ok) {
+            const data = await response.json();
+            const profiles = data.profiles || [];
+            
+            // Check if profile already exists
+            const existingProfileIndex = profiles.findIndex(p => p.userId === currentUser.id);
+            
+            if (existingProfileIndex !== -1) {
+                // Update existing profile
+                profiles[existingProfileIndex] = profilePayload;
+                console.log('Profile updated in database successfully');
             } else {
-                // Create new profile
-                const createRes = await fetch(`${API_BASE}/profiles`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(profilePayload)
-                });
-                if (createRes.ok) {
-                    console.log('Profile created in database successfully');
-                    return true;
-                } else {
-                    console.error('Failed to create profile:', createRes.status, createRes.statusText);
-                    throw new Error('Failed to create profile in database');
-                }
+                // Add new profile
+                profilePayload.id = Date.now(); // Simple ID generation
+                profiles.push(profilePayload);
+                console.log('Profile created in database successfully');
+            }
+            
+            // Save updated data back to db.json
+            const saveResponse = await fetch(`${API_BASE}/db.json`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    ...data,
+                    profiles: profiles
+                })
+            });
+            
+            if (saveResponse.ok) {
+                console.log('Profile saved to database successfully');
+                return true;
+            } else {
+                console.error('Failed to save profile:', saveResponse.status, saveResponse.statusText);
+                throw new Error('Failed to save profile in database');
             }
         } else {
-            throw new Error('Failed to check for existing profile');
+            throw new Error('Failed to load current database');
         }
+        
     } catch (error) {
         console.error('Error saving profile to database:', error);
         return false;
